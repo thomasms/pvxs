@@ -139,6 +139,8 @@ struct PVXS_API Operation {
 
     //! Queue an interruption of a wait() or wait(double) call.
     virtual void interrupt() =0;
+
+    virtual void reExec(const Value& arg, std::function<void(client::Result&&)>&& resultcb) =0;
 };
 
 //! Handle for monitor subscription
@@ -464,6 +466,7 @@ protected:
     struct Req;
     std::shared_ptr<Req> req;
     unsigned _prio = 0u;
+    bool _autoexec = true;
 
     CommonBase() = default;
     CommonBase(const std::shared_ptr<Context::Pvt>& ctx, const std::string& name) : ctx(ctx), _name(name) {}
@@ -543,6 +546,9 @@ public:
     // called during operation INIT phase for Get/Put/Monitor when remote type
     // description is available.
     SubBuilder& onInit(std::function<void (const Value&)>&& cb) { this->_onInit = std::move(cb); return _sb(); }
+
+    // control whether operations automatically proceed from INIT to EXEC
+    SubBuilder& autoExec(bool b) { this->_autoexec = b; return _sb(); }
 };
 
 } // namespace detail
