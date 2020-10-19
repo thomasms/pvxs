@@ -191,6 +191,9 @@ public:
      * @endcode
      */
     virtual Value pop() =0;
+
+    //! return strong internal reference
+    virtual std::shared_ptr<Subscription> shared_from_this() const =0;
 };
 
 //! Handle for entry in Channel cache
