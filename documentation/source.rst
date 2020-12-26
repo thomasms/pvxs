@@ -59,3 +59,6 @@ API
 
 .. doxygenstruct:: pvxs::server::MonitorStat
     :members:
+
+.. doxygenstruct:: pvxs::server::ClientCredentials
+    :members:
