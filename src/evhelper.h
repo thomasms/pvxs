@@ -163,8 +163,8 @@ public:
 
     inline void reset() { pvt.reset(); }
 
-private:
     struct Pvt;
+private:
     std::shared_ptr<Pvt> pvt;
 public:
     event_base* base = nullptr;

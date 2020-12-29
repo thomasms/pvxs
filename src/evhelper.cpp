@@ -28,6 +28,7 @@
 #include <epicsGuard.h>
 #include <dbDefs.h>
 #include <ellLib.h>
+#include <cantProceed.h>
 
 #include "evhelper.h"
 #include "pvaproto.h"
@@ -52,6 +53,12 @@ static
 epicsThreadOnceId evthread_once = EPICS_THREAD_ONCE_INIT;
 
 static
+struct evbase_gbl_t {
+    epicsMutex mutex;
+    std::map<epicsThreadId, evbase::Pvt*> workers;
+} *evbase_gbl;
+
+static
 void evthread_init(void* unused)
 {
 #if defined(EVTHREAD_USE_WINDOWS_THREADS_IMPLEMENTED)
@@ -64,6 +71,12 @@ void evthread_init(void* unused)
 #  error No threading support for this target
     // TODO fallback to libCom ?
 #endif
+
+    try {
+        evbase_gbl = new evbase_gbl_t;
+    }catch(std::exception& e){
+        cantProceed("PVXS %s : %s", __func__, e.what());
+    }
 }
 
 struct ThreadEvent
@@ -163,6 +176,7 @@ struct evbase::Pvt : public epicsThreadRunable
 
     virtual void run() override final
     {
+        auto self(epicsThreadGetIdSelf());
         try {
             decltype (base) tbase(event_base_new());
             if(evthread_make_base_notifiable(tbase.get())) {
@@ -180,6 +194,11 @@ struct evbase::Pvt : public epicsThreadRunable
             if(event_add(keepalive.get(), &tick))
                 throw std::runtime_error("Can't start keepalive timer");
 
+            {
+                Guard G(evbase_gbl->mutex);
+                evbase_gbl->workers[self] = this;
+            }
+
             start_sync.signal();
 
             log_info_printf(logerr, "Enter loop worker for %p\n", base.get());
@@ -193,6 +212,10 @@ struct evbase::Pvt : public epicsThreadRunable
             log_exc_printf(logerr, "Unhandled exception in event_base run : %s\n",
                             e.what());
             start_sync.signal();
+        }
+        {
+            Guard G(evbase_gbl->mutex);
+            evbase_gbl->workers.erase(self);
         }
     }
 
@@ -299,6 +322,15 @@ bool evbase::_call(mfunction&& fn, bool dothrow) const
     if(pvt->worker.isCurrentThread()) {
         fn();
         return true;
+    }
+
+    if(logerr.test(Level::Debug)) {
+        auto self = epicsThreadGetIdSelf();
+        Guard G(evbase_gbl->mutex);
+        auto it(evbase_gbl->workers.find(self));
+        if(it!=evbase_gbl->workers.end()) {
+            log_debug_printf(logerr, "loop %p %p calls %p\n", pvt.get(), self, pvt->worker.getId());
+        }
     }
 
     static ThreadEvent done;
