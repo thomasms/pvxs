@@ -128,6 +128,8 @@ jobs:
         sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
         sudo apt-get -y install ${{ matrix.cmp }}
       if: matrix.utoolchain
+    - name: Automatic core dumper analysis
+      uses: mdavidsaver/ci-core-dumper@master
     - name: Prepare and compile dependencies
       run: python .ci/cue.py prepare
     - name: Build libevent
@@ -137,7 +139,7 @@ jobs:
     - name: Host info
       run: python .ci/cue.py --add-path "{TOP}/bin/{EPICS_HOST_ARCH}" --add-path "{TOP}/bundle/usr/{EPICS_HOST_ARCH}/lib" exec pvxinfo -D
     - name: Run main module tests
-      run: python .ci/cue.py --add-path "{TOP}/bundle/usr/{EPICS_HOST_ARCH}/lib" test
+      run: python -m ci_core_dumper exec python .ci/cue.py --add-path "{TOP}/bundle/usr/{EPICS_HOST_ARCH}/lib" test
     - name: Collect and show test results
       run: python .ci/cue.py test-results
     - name: CDT Check
