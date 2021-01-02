@@ -199,6 +199,9 @@ public:
      */
     virtual Value pop() =0;
 
+    // replace handler stored with MonitorBuilder::event()
+    virtual void onEvent(std::function<void(Subscription&)>&&) =0;
+
     //! return strong internal reference
     virtual std::shared_ptr<Subscription> shared_from_this() const =0;
 };
