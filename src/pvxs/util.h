@@ -9,11 +9,17 @@
 
 #include <map>
 #include <array>
+#include <deque>
 #include <functional>
 #include <ostream>
 #include <type_traits>
+#include <stdexcept>
 
 #include <osiSock.h>
+#include <epicsEvent.h>
+#include <epicsMutex.h>
+#include <epicsGuard.h>
+
 #include <pvxs/version.h>
 
 namespace pvxs {
@@ -167,6 +173,100 @@ private:
  */
 PVXS_API
 std::ostream& target_information(std::ostream&);
+
+/** Thread-safe, bounded, multi-producer, single-consumer queue
+ *
+ * @code
+ * MPSCFIFO<std::function<void()>> Q;
+ * ...
+ * while(auto work = Q.pop()) { // Q.push(nullptr) to break loop
+ *     work();
+ * }
+ * @endcode
+ */
+template<typename T>
+class MPSCFIFO {
+    epicsMutex lock;
+    epicsEvent notifyW, notifyR;
+    std::deque<T> Q;
+    const size_t nlimit;
+    unsigned nwriters=0u;
+
+    typedef epicsGuard<epicsMutex> Guard;
+    typedef epicsGuardRelease<epicsMutex> UnGuard;
+public:
+    typedef T value_type;
+
+    //! Construct a new queue
+    explicit MPSCFIFO(size_t limit)
+        :nlimit(limit)
+    {
+        if(!nlimit)
+            throw std::invalid_argument("MPSCFIFO limit must be >0");
+    }
+
+    /** Construct a new element into the queue.
+     *
+     * A bounded queue will block while full.
+     */
+    template<typename ...Args>
+    void emplace(Args&&... args) {
+        bool wakeup;
+        {
+            Guard G(lock);
+            // while full, wait for reader to consume an entry
+            while(Q.size()>=nlimit) {
+                nwriters++;
+                {
+                    UnGuard U(G);
+                    notifyW.wait();
+                }
+                nwriters--;
+            }
+            // notify reader when queue becomes not empty
+            wakeup = Q.empty();
+            Q.emplace_back(std::forward<Args>(args)...);
+        }
+        if(wakeup)
+            notifyR.signal();
+    }
+
+    //! Move a new element to the queue
+    void push(T&& ent) {
+        // delegate to T::T(T&&)
+        emplace(std::move(ent));
+    }
+
+    //! Copy a new element to the queue
+    void push(const T& ent) {
+        // delegate to T::T(const T&)
+        emplace(ent);
+    }
+
+    /** Remove an element from the queue.
+     *
+     * Blocks while queue is empty.
+     */
+    T pop() {
+        bool wakeup;
+        T ret;
+        {
+            Guard G(lock);
+            // wait for queue to become not empty
+            while(Q.empty()) {
+                UnGuard U(G);
+                notifyR.wait();
+            }
+            // wakeup a writer since the queue will have an empty entry
+            wakeup = nwriters;
+            ret = std::move(Q.front());
+            Q.pop_front();
+        }
+        if(wakeup)
+            notifyW.signal();
+        return ret;
+    }
+};
 
 } // namespace pvxs
 
