@@ -713,6 +713,9 @@ struct PVXS_API Config {
     //! Whether to extend the addressList with local interface broadcast addresses.  (recommended)
     bool autoAddrList = true;
 
+    //! Inactivity timeout interval for TCP connections.  (seconds)
+    double tcpTimeout = 40.0;
+
     // compat
     static inline Config from_env() { return Config{}.applyEnv(); }
 

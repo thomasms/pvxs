@@ -146,6 +146,9 @@ struct PVXS_API Config {
     //! Whether to populate the beacon address list automatically.  (recommended)
     bool auto_beacon = true;
 
+    //! Inactivity timeout interval for TCP connections.  (seconds)
+    double tcpTimeout = 40.0;
+
     //! Server unique ID.  Only meaningful in readback via Server::config()
     GUID guid{};
 

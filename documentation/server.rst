@@ -69,6 +69,13 @@ EPICS_PVAS_BROADCAST_PORT or EPICS_PVA_BROADCAST_PORT
     If already in use, then an exception is thrown.
     Sets `pvxs::server::Config::udp_port`
 
+EPICS_PVA_CONN_TMO
+    Inactivity timeout for TCP connections.  For compatibility with pvAccessCPP
+    a multiplier of 4/3 is applied.  So a value of 30 results in a 40 second timeout.
+
+.. versionadded:: UNRELEASED
+    Prior to UNRELEASED *EPICS_PVA_CONN_TMO* was ignored.
+
 .. doxygenstruct:: pvxs::server::Config
     :members:
 
