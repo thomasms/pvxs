@@ -107,6 +107,7 @@ struct PVXS_API Operation {
         Put     = 11, // CMD_PUT
         RPC     = 20, // CMD_RPC
         Monitor = 13, // CMD_MONITOR
+        Discover = 3, // CMD_SEARCH
     } op;
 
     explicit constexpr Operation(operation_t op) :op(op) {}
@@ -222,6 +223,8 @@ class RPCBuilder;
 class MonitorBuilder;
 class RequestBuilder;
 class ConnectBuilder;
+struct Discovered;
+class DiscoverBuilder;
 
 /** An independent PVA protocol client instance
  *
@@ -441,6 +444,9 @@ public:
      */
     static inline
     RequestBuilder request();
+
+    inline
+    DiscoverBuilder discover(std::function<void(const Discovered &)> &&);
 
     /** Request prompt search of any disconnected channels.
      *
@@ -805,6 +811,29 @@ public:
     std::shared_ptr<Connect> exec();
 };
 ConnectBuilder Context::connect(const std::string& pvname) { return ConnectBuilder{pvt, pvname}; }
+
+struct Discovered {
+    std::string peer;
+    std::string server;
+    GUID guid;
+};
+class DiscoverBuilder
+{
+    std::shared_ptr<Context::Pvt> ctx;
+    std::function<void(const Discovered &)> _fn;
+    bool _syncCancel = true;
+public:
+    DiscoverBuilder(const std::shared_ptr<Context::Pvt>& ctx, std::function<void(const Discovered &)>&& fn)
+        :ctx(ctx)
+        ,_fn(fn)
+    {}
+
+    DiscoverBuilder& syncCancel(bool b) { this->_syncCancel = b; return *this; }
+
+    PVXS_API
+    std::shared_ptr<Operation> exec();
+};
+DiscoverBuilder Context::discover(std::function<void (const Discovered &)> && fn) { return DiscoverBuilder(pvt, std::move(fn)); }
 
 struct PVXS_API Config {
     //! List of unicast and broadcast addresses

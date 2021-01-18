@@ -381,6 +381,7 @@ ContextImpl::ContextImpl(const Config& conf, const evbase& tcp_loop)
     ,manager(UDPManager::instance())
     ,beaconCleaner(event_new(manager.loop().base, -1, EV_TIMEOUT|EV_PERSIST, &ContextImpl::tickBeaconCleanS, this))
     ,cacheCleaner(event_new(tcp_loop.base, -1, EV_TIMEOUT|EV_PERSIST, &ContextImpl::cacheCleanS, this))
+    ,discoverTick(event_new(tcp_loop.base, -1, EV_TIMEOUT, &ContextImpl::onDiscoverTickS, this))
 {
     effective.expand();
 
@@ -598,11 +599,12 @@ bool ContextImpl::onSearch()
         SockAddr serv;
         uint16_t port = 0;
         uint8_t found = 0u;
+        uint32_t seq = 0u;
 
         _from_wire<12>(M, &guid[0], false);
         // searchSequenceID
-        // we don't use this and instead rely on ID for individual PVs
-        M.skip(4u, __FILE__, __LINE__);
+        // we don't use this for normal search and instead rely on ID for individual PVs
+        from_wire(M, seq);
 
         from_wire(M, serv);
         if(serv.isAny())
@@ -610,16 +612,32 @@ bool ContextImpl::onSearch()
         from_wire(M, port);
         serv.setPort(port);
 
-        if(M.size()<4u || M[0]!=3u || M[1]!='t' || M[2]!='c' || M[3]!='p')
-            return true;
-        M.skip(4u, __FILE__, __LINE__);
-
+        std::string proto;
+        from_wire(M, proto);
         from_wire(M, found);
-        if(!found)
-            return true;
 
         uint16_t nSearch = 0u;
         from_wire(M, nSearch);
+
+        if(M.good() && seq==0x66696e64 && nSearch==0u && !found && !discoverers.empty()) {
+            // a discovery pong
+            log_debug_printf(io, "Discover reply for %s\n", src.tostring().c_str());
+
+            Discovered discovery{src.tostring(), serv.tostring(), guid};
+
+            for(auto& pair : discoverers) {
+                if(auto dis = pair.second.lock()) {
+                    try {
+                        dis->notify(discovery);
+                    } catch(std::exception& e) {
+                        log_exc_printf(io, "Unhandled exception during Discovery callback : %s\n", e.what());
+                    }
+                }
+            }
+        }
+
+        if(!found || proto!="tcp")
+            return true;
 
         for(auto n : range(nSearch)) {
             (void)n;
@@ -695,22 +713,29 @@ void ContextImpl::onSearchS(evutil_socket_t fd, short evt, void *raw)
     }
 }
 
-void ContextImpl::tickSearch()
+void ContextImpl::tickSearch(bool discover)
 {
+    // If !discover, then this is a discovery ping.
+    // these are really empty searches with must-reply set.
+    // So if !discover, then we should not be modifying any internal state
     {
         Guard G(pokeLock);
         poked = false;
     }
 
     auto idx = currentBucket;
-    currentBucket = (currentBucket+1u)%searchBuckets.size();
+    if(!discover)
+        currentBucket = (currentBucket+1u)%searchBuckets.size();
 
     log_debug_printf(io, "Search tick %zu\n", idx);
 
     decltype (searchBuckets)::value_type bucket;
-    searchBuckets[idx].swap(bucket);
+    if(!discover)
+        searchBuckets[idx].swap(bucket);
 
-    while(!bucket.empty()) {
+    while(!bucket.empty() || discover) {
+        // when 'discover' we only loop once
+
         searchMsg.resize(0x10000);
         FixedBuf M(true, searchMsg.data(), searchMsg.size());
         M.skip(8, __FILE__, __LINE__); // fill in header after body length known
@@ -722,7 +747,9 @@ void ContextImpl::tickSearch()
         // flags and reserved.
         // initially flags[7] is cleared (bcast)
         auto pflags = M.save();
-        to_wire(M, uint32_t(0u));
+        to_wire(M, uint8_t(discover ? 1 : 0)); // must-reply to discovery, ignore regular negative search
+        to_wire(M, uint8_t(0u));
+        to_wire(M, uint16_t(0u));
 
         // IN6ADDR_ANY_INIT
         to_wire(M, uint32_t(0u));
@@ -732,8 +759,13 @@ void ContextImpl::tickSearch()
 
         to_wire(M, uint16_t(searchRxPort));
 
-        to_wire(M, uint8_t(1u));
-        to_wire(M, "tcp");
+        if(discover) {
+            to_wire(M, uint8_t(0u));
+
+        } else {
+            to_wire(M, uint8_t(1u));
+            to_wire(M, "tcp");
+        }
 
         // placeholder for channel count;
         auto pcount = M.save();
@@ -742,6 +774,8 @@ void ContextImpl::tickSearch()
 
         bool payload = false;
         while(!bucket.empty()) {
+            assert(!discover);
+
             auto chan = bucket.front().lock();
             if(!chan || chan->state!=Channel::Searching) {
                 bucket.pop_front();
@@ -790,7 +824,7 @@ void ContextImpl::tickSearch()
         }
         assert(M.good());
 
-        if(!payload)
+        if(!payload && !discover)
             break;
 
         {
@@ -803,7 +837,10 @@ void ContextImpl::tickSearch()
             to_wire(H, Header{CMD_SEARCH, 0, uint32_t(consumed-8u)});
         }
         for(auto& pair : searchDest) {
-            *pflags = pair.second ? 0x80 : 0x00;
+            if(pair.second)
+                *pflags |= 0x80;
+            else
+                *pflags &= ~0x80;
 
             int ntx = sendto(searchTx.sock, (char*)searchMsg.data(), consumed, 0, &pair.first->sa, pair.first.size());
 
@@ -824,6 +861,9 @@ void ContextImpl::tickSearch()
                                  pair.second ? "ucast" : "bcast");
             }
         }
+
+        if(discover)
+            break;
     }
 
     if(event_add(searchTimer.get(), &bucketInterval))
@@ -833,7 +873,7 @@ void ContextImpl::tickSearch()
 void ContextImpl::tickSearchS(evutil_socket_t fd, short evt, void *raw)
 {
     try {
-        static_cast<ContextImpl*>(raw)->tickSearch();
+        static_cast<ContextImpl*>(raw)->tickSearch(false);
     }catch(std::exception& e){
         log_exc_printf(io, "Unhandled error in search timer callback: %s\n", e.what());
     }
