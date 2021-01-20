@@ -145,7 +145,7 @@ struct Channel {
     size_t nSearch = 0u;
 
     // GUID of last positive reply when state!=Searching
-    std::array<uint8_t, 12> guid;
+    GUID guid;
     SockAddr replyAddr;
 
     std::list<std::weak_ptr<OperationBase>> pending;
@@ -213,7 +213,7 @@ struct Context::Pvt
     const evevent searchTimer;
 
     struct BTrack {
-        std::array<uint8_t, 12> guid;
+        GUID guid;
         epicsTimeStamp lastRx;
     };
     std::map<SockAddr, BTrack> beaconSenders;

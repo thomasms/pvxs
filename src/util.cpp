@@ -253,6 +253,14 @@ std::ostream& operator<<(std::ostream& strm, const Escaper& esc)
 
 } // namespace detail
 
+std::ostream& operator<<(std::ostream& strm, const GUID& guid)
+{
+    strm<<"0x";
+    for(size_t i=0; i<guid.size(); i++)
+        strm<<std::hex<<std::setw(2)<<unsigned(guid[i]);
+    return strm;
+}
+
 #if !defined(__rtems__) && !defined(vxWorks)
 
 static
