@@ -323,6 +323,16 @@ void Context::cacheClear()
     });
 }
 
+void Context::ignoreGUIDs(const std::vector<GUID>& guids)
+{
+    if(!pvt)
+        throw std::logic_error("NULL Context");
+
+    pvt->impl->manager.loop().call([this, &guids](){
+        pvt->impl->ignoreGUIDs = guids;
+    });
+}
+
 Report Context::report() const
 {
     Report ret;
@@ -618,6 +628,13 @@ bool ContextImpl::onSearch()
 
         uint16_t nSearch = 0u;
         from_wire(M, nSearch);
+
+        if(M.good()) {
+            for(const GUID& ignore : ignoreGUIDs) {
+                if(guid==ignore)
+                    return true;
+            }
+        }
 
         if(M.good() && seq==0x66696e64 && nSearch==0u && !found && !discoverers.empty()) {
             // a discovery pong

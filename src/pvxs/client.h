@@ -20,6 +20,7 @@
 #include <pvxs/version.h>
 #include <pvxs/data.h>
 #include <pvxs/netcommon.h>
+#include <pvxs/util.h>
 
 namespace pvxs {
 namespace client {
@@ -475,6 +476,9 @@ public:
     /** Immediately close unused channels and connections.
      */
     void cacheClear();
+
+    // Ignore any search replies with this GUID
+    void ignoreGUIDs(const std::vector<GUID>& guids);
 
     //! Compile report about peers and channels
     Report report() const;
