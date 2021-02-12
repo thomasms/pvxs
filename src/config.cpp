@@ -97,7 +97,7 @@ void parse_timeout(double& dest, const std::string& name, const std::string& val
     try {
         temp = parseTo<double>(val);
 
-        if(!isfinite(temp)
+        if(!finite(temp)
                 || temp<0.0
                 || temp>double(std::numeric_limits<time_t>::max()))
             throw std::out_of_range("Out of range");
@@ -205,7 +205,7 @@ void enforceTimeout(double& tmo)
      * - As a compromise, continue to send echo at least every 15 seconds,
      *   and increase default timeout to 40.
      */
-    if(!isfinite(tmo) || tmo <= 0.0 || tmo >= double(std::numeric_limits<time_t>::max()))
+    if(!finite(tmo) || tmo <= 0.0 || tmo >= double(std::numeric_limits<time_t>::max()))
         tmo = 40.0;
     else if(tmo < 2.0)
         tmo = 2.0;
