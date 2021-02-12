@@ -87,7 +87,7 @@ template<typename Fn>
 struct Functor0 : public VFunctor0 {
     Functor0() = default;
     Functor0(const Functor0&) = delete;
-    Functor0(Functor0&&) noexcept = default;
+    Functor0(Functor0&&) = default;
     Functor0(Fn&& fn) : fn(std::move(fn)) {}
     virtual ~Functor0() {}
 
